@@ -17,6 +17,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+/////////////////////////////////////
+/////MODS FOR STAGING SURFACE RT/////
+/////NOT FOR USE/////////////////////
+/////////////////////////////////////
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -39,7 +44,8 @@
 #include <linux/skbuff.h>
 #include <linux/regulator/consumer.h>
 #include <linux/smb347-charger.h>
-#include <linux/rfkill-gpio.h>
+#include <linux/max17048_battery.h>
+#include <linux/leds.h>
 
 #include <mach/clk.h>
 #include <mach/iomap.h>
@@ -48,7 +54,7 @@
 #include <mach/iomap.h>
 #include <mach/io.h>
 #include <mach/i2s.h>
-#include <mach/tegra_asoc_pdata.h>
+#include <mach/tegra_rt5640_pdata.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <mach/usb_phy.h>
@@ -66,61 +72,21 @@
 #include "pm.h"
 #include "wdt-recovery.h"
 
-static struct balanced_throttle throttle_list[] = {
-#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
-	{
-		.id = BALANCED_THROTTLE_ID_TJ,
-		.throt_tab_size = 10,
-		.throt_tab = {
-			{      0, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 640000, 1000 },
-			{ 760000, 1000 },
-			{ 760000, 1050 },
-			{1000000, 1050 },
-			{1000000, 1100 },
-		},
-	},
-#endif
-#ifdef CONFIG_TEGRA_SKIN_THROTTLE
-	{
-		.id = BALANCED_THROTTLE_ID_SKIN,
-		.throt_tab_size = 6,
-		.throt_tab = {
-			{ 640000, 1200 },
-			{ 640000, 1200 },
-			{ 760000, 1200 },
-			{ 760000, 1200 },
-			{1000000, 1200 },
-			{1000000, 1200 },
-		},
-	},
-#endif
-};
-
 /* All units are in millicelsius */
 static struct tegra_thermal_data thermal_data = {
-	.shutdown_device_id = THERMAL_DEVICE_ID_NCT_EXT,
+	.temp_throttle = 85000,
 	.temp_shutdown = 90000,
-#if defined(CONFIG_TEGRA_EDP_LIMITS) || defined(CONFIG_TEGRA_THERMAL_THROTTLE)
-	.throttle_edp_device_id = THERMAL_DEVICE_ID_NCT_EXT,
-#endif
+	.temp_offset = TDIODE_OFFSET, /* temps based on tdiode */
 #ifdef CONFIG_TEGRA_EDP_LIMITS
 	.edp_offset = TDIODE_OFFSET,  /* edp based on tdiode */
 	.hysteresis_edp = 3000,
 #endif
-#ifdef CONFIG_TEGRA_THERMAL_THROTTLE
-	.temp_throttle = 85000,
+#ifdef CONFIG_TEGRA_THERMAL_SYSFS
 	.tc1 = 0,
 	.tc2 = 1,
 	.passive_delay = 2000,
-#endif
-#ifdef CONFIG_TEGRA_SKIN_THROTTLE
-	.skin_device_id = THERMAL_DEVICE_ID_SKIN,
-	.temp_throttle_skin = 43000,
+#else
+	.hysteresis_throttle = 10000,
 #endif
 };
 
@@ -161,21 +127,21 @@ static struct tegra_utmip_config utmi_phy_config[] = {
 	},
 };
 
-static struct rfkill_gpio_platform_data grouper_bt_rfkill_pdata[] = {
+/*
+static struct resource grouper_bcm4330_rfkill_resources[] = {
 	{
-		.name   = "bt_rfkill",
-		.shutdown_gpio  = TEGRA_GPIO_PU0,
-		.reset_gpio     = TEGRA_GPIO_INVALID,
-		.type           = RFKILL_TYPE_BLUETOOTH,
+		.name   = "bcm4330_nshutdown_gpio",
+		.start  = TEGRA_GPIO_PU0,
+		.end    = TEGRA_GPIO_PU0,
+		.flags  = IORESOURCE_IO,
 	},
 };
 
-static struct platform_device grouper_bt_rfkill_device = {
-	.name = "rfkill_gpio",
+static struct platform_device grouper_bcm4330_rfkill_device = {
+	.name = "bcm4330_rfkill",
 	.id             = -1,
-	.dev = {
-		.platform_data = &grouper_bt_rfkill_pdata,
-	},
+	.num_resources  = ARRAY_SIZE(grouper_bcm4330_rfkill_resources),
+	.resource       = grouper_bcm4330_rfkill_resources,
 };
 
 static struct resource grouper_bluesleep_resources[] = {
@@ -199,6 +165,7 @@ static struct resource grouper_bluesleep_resources[] = {
 	},
 };
 
+
 static struct platform_device grouper_bluesleep_device = {
 	.name           = "bluesleep",
 	.id             = -1,
@@ -211,8 +178,11 @@ static noinline void __init grouper_setup_bluesleep(void)
 {
 	platform_device_register(&grouper_bluesleep_device);
 	bluesleep_setup_uart_port(&tegra_uartc_device);
+	tegra_gpio_enable(TEGRA_GPIO_PU6);
+	tegra_gpio_enable(TEGRA_GPIO_PU1);
 	return;
 }
+*/
 
 static __initdata struct tegra_clk_init_table grouper_clk_init_table[] = {
 	/* name		parent		rate		enabled */
@@ -240,6 +210,7 @@ static __initdata struct tegra_clk_init_table grouper_clk_init_table[] = {
 	{ NULL,		NULL,		0,		0},
 };
 
+/*
 static struct pn544_i2c_platform_data nfc_pdata = {
 	.irq_gpio = TEGRA_GPIO_PX0,
 	.ven_gpio = TEGRA_GPIO_PS7,
@@ -253,6 +224,7 @@ static struct i2c_board_info __initdata grouper_nfc_board_info[] = {
 		.irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PX0),
 	},
 };
+*/
 
 static struct tegra_i2c_platform_data grouper_i2c1_platform_data = {
 	.adapter_nr	= 0,
@@ -299,6 +271,28 @@ static struct tegra_i2c_platform_data grouper_i2c5_platform_data = {
 	.sda_gpio		= {TEGRA_GPIO_PZ7, 0},
 	.arb_recovery = arb_lost_recovery,
 };
+/*
+struct max17048_battery_model max17048_mdata = {
+	.rcomp          = 170,
+	.soccheck_A     = 252,
+	.soccheck_B     = 254,
+	.bits           = 19,
+	.alert_threshold = 0x00,
+	.one_percent_alerts = 0x40,
+	.alert_on_reset = 0x40,
+	.rcomp_seg      = 0x0800,
+	.hibernate      = 0x3080,
+	.vreset         = 0x9696,
+	.valert         = 0xD4AA,
+	.ocvtest        = 55600,
+};
+
+static struct i2c_board_info grouper_i2c4_max17048_board_info[] = {
+	{
+		I2C_BOARD_INFO("max17048", 0x36),
+		.platform_data = &max17048_mdata,
+	},
+};
 
 static struct i2c_board_info cardhu_i2c4_bq27541_board_info[] = {
 	{
@@ -311,12 +305,18 @@ static struct i2c_board_info grouper_i2c4_smb347_board_info[] = {
 		I2C_BOARD_INFO("smb347", 0x6a),
 	},
 };
-
+*/
+/*
 static struct i2c_board_info __initdata rt5640_board_info = {
 	I2C_BOARD_INFO("rt5640", 0x1c),
 	.irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_CDC_IRQ),
 };
 
+static struct i2c_board_info __initdata rt5639_board_info = {
+	I2C_BOARD_INFO("rt5639", 0x1c),
+	.irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_CDC_IRQ),
+};
+*/
 static void grouper_i2c_init(void)
 {
 	struct board_info board_info;
@@ -335,7 +335,7 @@ static void grouper_i2c_init(void)
 	platform_device_register(&tegra_i2c_device3);
 	platform_device_register(&tegra_i2c_device2);
 	platform_device_register(&tegra_i2c_device1);
-
+/*
 	i2c_register_board_info(4, grouper_i2c4_smb347_board_info,
 		ARRAY_SIZE(grouper_i2c4_smb347_board_info));
 
@@ -343,6 +343,9 @@ static void grouper_i2c_init(void)
 
 	i2c_register_board_info(4, cardhu_i2c4_bq27541_board_info,
 		ARRAY_SIZE(cardhu_i2c4_bq27541_board_info));
+
+	i2c_register_board_info(4, grouper_i2c4_max17048_board_info,
+		ARRAY_SIZE(grouper_i2c4_max17048_board_info));
 
 	if (project_info == GROUPER_PROJECT_NAKASI_3G) {
 		nfc_pdata.irq_gpio = TEGRA_GPIO_PS7;
@@ -352,6 +355,7 @@ static void grouper_i2c_init(void)
 		grouper_nfc_board_info[0].irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PS7);
 	}
 	i2c_register_board_info(2, grouper_nfc_board_info, 1);
+*/
 }
 
 static struct platform_device *grouper_uart_devices[] __initdata = {
@@ -469,12 +473,12 @@ static void __init grouper_uart_init(void)
 	platform_add_devices(grouper_uart_devices,
 				ARRAY_SIZE(grouper_uart_devices));
 }
-
+/*
 static struct platform_device tegra_camera = {
 	.name = "tegra_camera",
 	.id = -1,
 };
-
+*/
 static struct platform_device *grouper_spi_devices[] __initdata = {
 	&tegra_spi_device4,
 	&tegra_spi_device1,
@@ -539,23 +543,13 @@ static struct platform_device tegra_rtc_device = {
 	.resource = tegra_rtc_resources,
 	.num_resources = ARRAY_SIZE(tegra_rtc_resources),
 };
-
-static struct tegra_asoc_platform_data grouper_audio_pdata = {
+/*
+static struct tegra_rt5640_platform_data grouper_audio_pdata = {
 	.gpio_spkr_en		= TEGRA_GPIO_SPKR_EN,
 	.gpio_hp_det		= TEGRA_GPIO_HP_DET,
 	.gpio_hp_mute		= -1,
 	.gpio_int_mic_en	= TEGRA_GPIO_INT_MIC_EN,
 	.gpio_ext_mic_en	= TEGRA_GPIO_EXT_MIC_EN,
-	.i2s_param[HIFI_CODEC]	= {
-		.audio_port_id	= 0,
-		.is_i2s_master	= 1,
-		.i2s_mode	= TEGRA_DAIFMT_I2S,
-	},
-	.i2s_param[BT_SCO]	= {
-		.audio_port_id	= 3,
-		.is_i2s_master	= 1,
-		.i2s_mode	= TEGRA_DAIFMT_DSP_A,
-	},
 };
 
 static struct platform_device grouper_audio_device = {
@@ -566,6 +560,30 @@ static struct platform_device grouper_audio_device = {
 	},
 };
 
+static struct gpio_led grouper_led_info[] = {
+	{
+		.name			= "statled",
+		.default_trigger	= "default-on",
+		.gpio			= TEGRA_GPIO_STAT_LED,
+		.active_low		= 1,
+		.retain_state_suspended	= 0,
+		.default_state		= LEDS_GPIO_DEFSTATE_OFF,
+	},
+};
+
+static struct gpio_led_platform_data grouper_leds_pdata = {
+	.leds		= grouper_led_info,
+	.num_leds	= ARRAY_SIZE(grouper_led_info),
+};
+
+static struct platform_device grouper_leds_gpio_device = {
+	.name	= "leds-gpio",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &grouper_leds_pdata,
+	},
+};
+*/
 static struct platform_device *grouper_devices[] __initdata = {
 	&tegra_pmu_device,
 	&tegra_rtc_device,
@@ -573,13 +591,11 @@ static struct platform_device *grouper_devices[] __initdata = {
 #if defined(CONFIG_TEGRA_IOVMM_SMMU) || defined(CONFIG_TEGRA_IOMMU_SMMU)
 	&tegra_smmu_device,
 #endif
-	&tegra_wdt0_device,
-	&tegra_wdt1_device,
-	&tegra_wdt2_device,
+	&tegra_wdt_device,
 #if defined(CONFIG_TEGRA_AVP)
 	&tegra_avp_device,
 #endif
-	&tegra_camera,
+	//&tegra_camera,
 #if defined(CONFIG_CRYPTO_DEV_TEGRA_SE)
 	&tegra_se_device,
 #endif
@@ -593,9 +609,10 @@ static struct platform_device *grouper_devices[] __initdata = {
 	&tegra_spdif_device,
 	&spdif_dit_device,
 	&bluetooth_dit_device,
-	&grouper_bt_rfkill_device,
+	//&grouper_bcm4330_rfkill_device,
 	&tegra_pcm_device,
-	&grouper_audio_device,
+	//&grouper_audio_device,
+	//&grouper_leds_gpio_device,
 	&tegra_hda_device,
 #if defined(CONFIG_CRYPTO_DEV_TEGRA_AES)
 	&tegra_aes_device,
@@ -607,19 +624,19 @@ static __initdata struct tegra_clk_init_table spi_clk_init_table[] = {
 	{ "sbc1",       "pll_p",        52000000,       true},
 	{ NULL,         NULL,           0,              0},
 };
-
+/*
 static __initdata struct tegra_clk_init_table touch_clk_init_table[] = {
 	/* name         parent          rate            enabled */
-	{ "extern3",    "pll_p",        41000000,       true},
+/*	{ "extern3",    "pll_p",        41000000,       true},
 	{ "clk_out_3",  "extern3",      40800000,       true},
 	{ NULL,         NULL,           0,              0},
 };
-
-#if defined(CONFIG_TOUCHSCREEN_ELAN_TF_3K)
+*/
+//#if defined(CONFIG_TOUCHSCREEN_ELAN_TF_3K)
 // Interrupt pin: TEGRA_GPIO_PH4
 // Reset pin: TEGRA_GPIO_PH6
 // Power pin:
-
+/*
 #include <linux/i2c/ektf3k.h>
 
 static struct elan_ktf3k_i2c_platform_data ts_elan_ktf3k_data[] = {
@@ -642,13 +659,17 @@ static struct i2c_board_info elan_i2c_devices[] = {
 
 };
 #endif
-
+*/
+/*
 static int elan_touch_init(void)
 {
 	struct board_info BoardInfo;
 #if defined(CONFIG_TOUCHSCREEN_ELAN_TF_3K)
-	struct elan_ktf3k_i2c_platform_data *platform;
+      struct elan_ktf3k_i2c_platform_data *platform;
 #endif
+	tegra_gpio_enable(TEGRA_GPIO_PH3);
+	tegra_gpio_enable(TEGRA_GPIO_PH4);
+	tegra_gpio_enable(TEGRA_GPIO_PH6);
 
 	gpio_request(TEGRA_GPIO_PH3, "elan-pwn");
 	gpio_direction_output(TEGRA_GPIO_PH3, 1);
@@ -669,7 +690,8 @@ static int elan_touch_init(void)
 		atmel_mxt_info.config_crc = MXT_CONFIG_CRC_SKU2000;
 	}
 #endif
-
+*/
+/*
 #if defined(CONFIG_TOUCHSCREEN_ELAN_TF_3K)
 	platform = (struct elan_ktf3k_i2c_platform_data *)elan_i2c_devices[0].platform_data;
 	platform->abs_x_max = ELAN_X_MAX_370T - 1;
@@ -680,12 +702,15 @@ static int elan_touch_init(void)
 	return 0;
 
 }
-
+*/
+/*
 static int __init grouper_touch_init(void)
 {
 	int touch_id;
 
     return elan_touch_init();	
+	tegra_gpio_enable(GROUPER_TS_ID1);
+	tegra_gpio_enable(GROUPER_TS_ID2);
 
 	gpio_request(GROUPER_TS_ID1, "touch-id1");
 	gpio_direction_input(GROUPER_TS_ID1);
@@ -699,6 +724,7 @@ static int __init grouper_touch_init(void)
 	pr_info("touch-id %d\n", touch_id);
 
 	/* Disable TS_ID GPIO to save power */
+/*
 	gpio_direction_output(GROUPER_TS_ID1, 0);
 	tegra_pinmux_set_pullupdown(GROUPER_TS_ID1_PG, TEGRA_PUPD_NORMAL);
 	tegra_pinmux_set_tristate(GROUPER_TS_ID1_PG, TEGRA_TRI_TRISTATE);
@@ -729,7 +755,7 @@ static int __init grouper_touch_init(void)
 	}
 	return 0;
 }
-
+*/
 static struct tegra_uhsic_config uhsic_phy_config = {
 	.enable_gpio = EN_HSIC_GPIO,
 	.reset_gpio = -1,
@@ -853,7 +879,7 @@ static int grouper_usb_hsic_postsupend(void)
 {
 	pr_debug("%s\n", __func__);
 #ifdef CONFIG_TEGRA_BB_XMM_POWER
-	baseband_xmm_set_power_status(BBXMM_PS_L2);
+	//baseband_xmm_set_power_status(BBXMM_PS_L2);
 #endif
 	return 0;
 }
@@ -862,7 +888,7 @@ static int grouper_usb_hsic_preresume(void)
 {
 	pr_debug("%s\n", __func__);
 #ifdef CONFIG_TEGRA_BB_XMM_POWER
-	baseband_xmm_set_power_status(BBXMM_PS_L2TOL0);
+	//baseband_xmm_set_power_status(BBXMM_PS_L2TOL0);
 #endif
 	return 0;
 }
@@ -871,7 +897,7 @@ static int grouper_usb_hsic_phy_ready(void)
 {
 	pr_debug("%s\n", __func__);
 #ifdef CONFIG_TEGRA_BB_XMM_POWER
-	baseband_xmm_set_power_status(BBXMM_PS_L0);
+	//baseband_xmm_set_power_status(BBXMM_PS_L0);
 #endif
 	return 0;
 }
@@ -880,7 +906,7 @@ static int grouper_usb_hsic_phy_off(void)
 {
 	pr_debug("%s\n", __func__);
 #ifdef CONFIG_TEGRA_BB_XMM_POWER
-	baseband_xmm_set_power_status(BBXMM_PS_L3);
+	//baseband_xmm_set_power_status(BBXMM_PS_L3);
 #endif
 	return 0;
 }
@@ -890,13 +916,15 @@ static struct usb_phy_plat_data tegra_usb_phy_pdata[] = {
 	[0] = {
 			.instance = 0,
 			.vbus_gpio = -1,
+			.vbus_irq = MAX77663_IRQ_BASE +
+							MAX77663_IRQ_ACOK_FALLING,
 	},
 	[1] = {
 			.instance = 1,
 			.vbus_gpio = -1,
 	},
 };
-
+/*
 static struct baseband_power_platform_data tegra_baseband_power_data = {
 	.baseband_type = BASEBAND_XMM,
 	.modem = {
@@ -925,7 +953,7 @@ static struct platform_device tegra_baseband_power_device = {
 		.platform_data = &tegra_baseband_power_data,
 	},
 };
-
+*/
 static void grouper_usb_init(void)
 {
 	u32 project_info = grouper_get_project_id();
@@ -936,10 +964,11 @@ static void grouper_usb_init(void)
 
 	tegra_otg_device.dev.platform_data = &tegra_otg_pdata;
 	platform_device_register(&tegra_otg_device);
-
+/*
 	if (project_info == GROUPER_PROJECT_NAKASI_3G) {
 		printk(KERN_INFO"%s : pcb_id_version = %d \n", __func__, pcb_id_version);
 		/* for baseband devices do not switch off phy during suspend */
+/*
 		tegra_ehci_uhsic_pdata.power_down_on_bus_suspend = 0;
 		tegra_ehci_pdata[1].power_down_on_bus_suspend = 0;
 		uhsic_phy_config.postsuspend = grouper_usb_hsic_postsupend;
@@ -948,7 +977,7 @@ static void grouper_usb_init(void)
 		uhsic_phy_config.post_phy_off = grouper_usb_hsic_phy_off;
 		tegra_ehci2_device.dev.platform_data = &tegra_ehci_uhsic_pdata;
 		/* baseband registration happens in baseband-xmm-power  */
-
+/*
 		switch (pcb_id_version) {
 			case TILAPIA_PCBA_SR1:
 			case TILAPIA_PCBA_SR2:
@@ -959,12 +988,14 @@ static void grouper_usb_init(void)
 				uhsic_phy_config.enable_gpio = TEGRA_GPIO_PU4;
 		}
 
-	} else {
+	} else 
+*/
+//	{
 		tegra_ehci2_device.dev.platform_data = &tegra_ehci_pdata[1];
 		platform_device_register(&tegra_ehci2_device);
-	}
+// 	}
 }
-
+/*
 static void grouper_modem_init(void)
 {
 	u32 project_info = grouper_get_project_id();
@@ -972,6 +1003,30 @@ static void grouper_modem_init(void)
         printk(KERN_INFO"%s\n",__func__);
 
 	if (project_info == GROUPER_PROJECT_NAKASI_3G) {
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.bb_rst);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.bb_on);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.bb_vbat);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_bb_rst_ind);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.bb_vbus);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.bb_sw_sel);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.sim_card_det);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_bb_wake);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_ap_wake);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_hsic_active);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_hsic_sus_req);
+		tegra_gpio_enable(
+			tegra_baseband_power_data.modem.xmm.ipc_bb_force_crash);
 		tegra_baseband_power_data.hsic_register =
 			&tegra_usb_hsic_host_register;
 		tegra_baseband_power_data.hsic_unregister =
@@ -983,34 +1038,59 @@ static void grouper_modem_init(void)
 		platform_device_register(&tegra_baseband_power_device);
 	}
 }
-
+*/
 #else
 static void grouper_usb_init(void) { }
 static void grouper_modem_init(void) { }
 #endif
-
+/*
 static void grouper_audio_init(void)
 {
+	struct board_info board_info;
+
+	tegra_get_board_info(&board_info);
+
 	grouper_audio_pdata.codec_name = "rt5640.4-001c";
 	grouper_audio_pdata.codec_dai_name = "rt5640-aif1";
 }
 
+static void grouper_gps_init(void)
+{
+	tegra_gpio_enable(TEGRA_GPIO_PU2);
+	tegra_gpio_enable(TEGRA_GPIO_PU3);
+}
+
+static void grouper_nfc_init(void)
+{
+	u32 project_info = grouper_get_project_id();
+
+	if (project_info == GROUPER_PROJECT_NAKASI) {
+		tegra_gpio_enable(TEGRA_GPIO_PX0);
+		tegra_gpio_enable(TEGRA_GPIO_PS7);
+		tegra_gpio_enable(TEGRA_GPIO_PR3);
+	} else if (project_info == GROUPER_PROJECT_NAKASI_3G) {
+		tegra_gpio_enable(TEGRA_GPIO_PS7);
+		tegra_gpio_enable(TEGRA_GPIO_PP0);
+		tegra_gpio_enable(TEGRA_GPIO_PP3);
+	}
+}
+*/
 unsigned int boot_reason=0;
 void grouper_booting_info(void )
 {
 	static void __iomem *pmc = IO_ADDRESS(TEGRA_PMC_BASE);
 	unsigned int reg;
 	#define PMC_RST_STATUS_WDT (1)
-	#define PMC_RST_STATUS_SW (3)
+	#define PMC_RST_STATUS_SW   (3)
 
-	reg = readl(pmc + 0x1b4);
+	reg = readl(pmc +0x1b4);
 	printk("grouper_booting_info reg=%x\n",reg );
 
-	if (reg == PMC_RST_STATUS_SW){
-		boot_reason = PMC_RST_STATUS_SW;
+	if (reg ==PMC_RST_STATUS_SW){
+		boot_reason=PMC_RST_STATUS_SW;
 		printk("grouper_booting_info-SW reboot\n");
-	} else if (reg == PMC_RST_STATUS_WDT){
-		boot_reason = PMC_RST_STATUS_WDT;
+	} else if (reg ==PMC_RST_STATUS_WDT){
+		boot_reason=PMC_RST_STATUS_WDT;
 		printk("grouper_booting_info-watchdog reboot\n");
 	} else{
 		boot_reason=0;
@@ -1021,10 +1101,9 @@ void grouper_booting_info(void )
 static void __init tegra_grouper_init(void)
 {
 	grouper_misc_init();
-	tegra_thermal_init(&thermal_data,
-				throttle_list,
-				ARRAY_SIZE(throttle_list));
+	tegra_thermal_init(&thermal_data);
 	tegra_clk_init_from_table(grouper_clk_init_table);
+	grouper_pinmux_init();
 	grouper_misc_reset();
 	grouper_booting_info();
 	grouper_i2c_init();
@@ -1037,7 +1116,7 @@ static void __init tegra_grouper_init(void)
 		grouper_edp_init();
 #endif
 	grouper_uart_init();
-	grouper_audio_init();
+	//grouper_audio_init();
 	platform_add_devices(grouper_devices, ARRAY_SIZE(grouper_devices));
 	tegra_ram_console_debug_init();
 	grouper_sdhci_init();
@@ -1048,14 +1127,17 @@ static void __init tegra_grouper_init(void)
 		grouper_regulator_init();
 		grouper_suspend_init();
 	}
-	grouper_touch_init();
-	grouper_modem_init();
+	//grouper_touch_init();
+	//grouper_gps_init();
+	//grouper_modem_init();
 	grouper_keys_init();
 	grouper_panel_init();
+	//grouper_nfc_init();
 	grouper_sensors_init();
-	grouper_setup_bluesleep();
+	//grouper_setup_bluesleep();
 	grouper_pins_state_init();
 	grouper_emc_init();
+//	tegra_release_bootloader_fb();
 #ifdef CONFIG_TEGRA_WDT_RECOVERY
 	tegra_wdt_recovery_init();
 #endif
@@ -1077,17 +1159,11 @@ static void __init tegra_grouper_reserve(void)
 	grouper_ramconsole_reserve(SZ_1M);
 }
 
-static void __init tegra_grouper_init_early(void)
-{
-	tegra_init_early();
-	grouper_pinmux_init();
-}
-
 MACHINE_START(GROUPER, "grouper")
 	.boot_params	= 0x80000100,
 	.map_io		= tegra_map_common_io,
 	.reserve	= tegra_grouper_reserve,
-	.init_early	= tegra_grouper_init_early,
+	.init_early	= tegra_init_early,
 	.init_irq	= tegra_init_irq,
 	.timer		= &tegra_timer,
 	.init_machine	= tegra_grouper_init,
